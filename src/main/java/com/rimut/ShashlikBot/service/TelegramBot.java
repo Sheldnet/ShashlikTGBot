@@ -3,6 +3,7 @@ package com.rimut.ShashlikBot.service;
 import com.rimut.ShashlikBot.config.BotConfig;
 import com.rimut.ShashlikBot.model.User;
 import com.rimut.ShashlikBot.model.UserRepository;
+import com.rimut.ShashlikBot.service.command.*;
 import com.vdurmont.emoji.EmojiParser;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -24,13 +25,18 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class TelegramBot extends TelegramLongPollingBot {
 
     @Autowired
     private UserRepository userRepository;
+
+    private final Map<String, Command> commandMap = new HashMap<>();
+
 
     @Override
     public String getBotToken() {
@@ -64,6 +70,11 @@ public class TelegramBot extends TelegramLongPollingBot {
         } catch (TelegramApiException e) {
 
         }
+
+        commandMap.put("/start", new StartCommand());
+        commandMap.put("/help", new HelloCommand());
+        commandMap.put("/sticker", new StikerCommand());
+        commandMap.put("/register", new RegisterCommand());
     }
 
     @Override
@@ -73,35 +84,19 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-
         if(update.hasMessage() && update.getMessage().hasText()) {
             String messageText = update.getMessage().getText();
-            long chatId = update.getMessage().getFrom().getId();
+            long chatId = update.getMessage().getChatId();
 
-            if(messageText.contains("/send") && config.getOwnerId() == chatId) {
+            if(messageText.startsWith("/send") && config.getOwnerId().equals(chatId)) {
                 var textToSend = EmojiParser.parseToUnicode(messageText.substring(messageText.indexOf(" ")));
                 var users = userRepository.findAll();
                 for (User user : users){
                     prepareAndSendMessage(user.getChatId(), textToSend);
                 }
             } else {
-                switch (messageText) {
-                    case "/start":
-                        registerUser(update.getMessage());
-                        startCommanReceived(chatId, update.getMessage().getChat().getFirstName());
-                        break;
-                    case "/help":
-                        prepareAndSendMessage(chatId, HELP_TEXT);
-                        break;
-                    case "/sticker":
-                        sendSticker(chatId);
-                        break;
-                    case "/register":
-                        register(chatId);
-                        break;
-                    default:
-                        prepareAndSendMessage(chatId, "Sorry, command was not recognized");
-                }
+                Command command = commandMap.getOrDefault(messageText, new UnknownCommand());
+                command.execute(update, this);
             }
         } else if (update.hasCallbackQuery()) {
             String callbackData = update.getCallbackQuery().getData();
@@ -117,10 +112,9 @@ public class TelegramBot extends TelegramLongPollingBot {
                 executeEditMessageText(text, chatId, messageId);
             }
         }
-
     }
 
-    private void register(long chatId) {
+    public void register(long chatId) {
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
         message.setText("Do you really want to register?");
@@ -149,7 +143,7 @@ public class TelegramBot extends TelegramLongPollingBot {
     }
 
 
-    private void registerUser(Message msg) {
+    public void registerUser(Message msg) {
 
         if(userRepository.findById(msg.getChatId()).isEmpty()){
             var chatId = msg.getChatId();
@@ -167,13 +161,13 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
-    private void startCommanReceived(long chatId, String name) {
+    public void startCommanReceived(long chatId, String name) {
         String answer = EmojiParser.parseToUnicode("Hi, " + name + ", nice to meet you! \n Are you want a shashlik?" + " :star:" + " :star:" + " :star:");
 
         sendMessage(chatId, answer);
     }
 
-    private void sendMessage(long chatId, String textToSend) {
+    public void sendMessage(long chatId, String textToSend) {
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
         message.setText(textToSend);
@@ -183,7 +177,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         executeMessage(message);
     }
 
-    private void sendSticker(long chatId) {
+    public void sendSticker(long chatId) {
         SendSticker sticker = new SendSticker();
         sticker.setChatId(String.valueOf(chatId));
         InputFile file = new InputFile("CAACAgIAAxkBAAEDpytl1eLGgIBZG_KlTIlMHQVFdeDdrwACYAQAAmvEygp-n8t1YZBpMzQE");
@@ -194,7 +188,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
-    private ReplyKeyboardMarkup createReplyKeyboardMarkup() {
+    public ReplyKeyboardMarkup createReplyKeyboardMarkup() {
         ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
         List<KeyboardRow> keyboardRows = new ArrayList<>();
 
@@ -213,7 +207,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         return keyboardMarkup;
     }
 
-    private void executeEditMessageText(String text, long chatId, long messageId) {
+    public void executeEditMessageText(String text, long chatId, long messageId) {
         EditMessageText message = new EditMessageText();
         message.setChatId(String.valueOf(chatId));
         message.setText(text);
@@ -226,14 +220,14 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
-    private void executeMessage(SendMessage message){
+    public void executeMessage(SendMessage message){
         try {
             execute(message);
         } catch (TelegramApiException e) {
         }
     }
 
-    private void prepareAndSendMessage(long chatId, String textToSend){
+    public void prepareAndSendMessage(long chatId, String textToSend){
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
         message.setText(textToSend);
